@@ -76,6 +76,7 @@ type lockIDsMap map[protopath]map[string]map[int]int
 */
 type lockNamesMap map[protopath]map[string]map[string]int
 
+// Records all the import path in a file
 type importMap map[protopath][]protopath
 
 // lockFieldMap:
@@ -151,9 +152,14 @@ func incEnumFields(reservedIDMap lockIDsMap, reservedNameMap lockNamesMap, filep
 	}
 }
 
+
+// Check if there is any field removal for messages annotated with persisted
+// including its dependencies
 func NoRemovingFieldsIfPersisted(cur, upd Protolock) ([]Warning, bool) {
 	var warnings []Warning
 
+	// Records all the imports since the message's dependencies can be defined
+	// in other files.
 	importMap := make(importMap)
 	for _, def := range cur.Definitions {
 		var imports []protopath
@@ -166,7 +172,9 @@ func NoRemovingFieldsIfPersisted(cur, upd Protolock) ([]Warning, bool) {
 	// check all message fields
 	curFieldMap := getFieldMap(cur)
 	updFieldMap := getFieldMap(upd)
-	// filepath -> message name
+
+
+	// Find all messages annotated with persisted including their dependencies
 	persistedMessages := findPersistedMessages(&cur, curFieldMap, importMap)
 
 	for filepath, messageMap := range curFieldMap {
@@ -226,7 +234,7 @@ func traverseAndAddDependencies(rootPersistedMessages map[protopath]map[string]b
 			persistedMessages[protopath][messageName] = true
 
 			for _, field := range curFieldMap[protopath][messageName] {
-				// Check if the child is in current protopath
+				// Check if the child is in current file
 				childPersistedMessages[protopath] = make(map[string]bool)
 				for candidateMessageName := range curFieldMap[protopath] {
 					if candidateMessageName == field.Type {
@@ -234,7 +242,7 @@ func traverseAndAddDependencies(rootPersistedMessages map[protopath]map[string]b
 					}
 				}
 
-				// Check if the child is in the imported protopath
+				// Check if the child is in the imported file
 				if !strings.Contains(field.Type, ".") {
 					continue
 				}
@@ -256,6 +264,7 @@ func traverseAndAddDependencies(rootPersistedMessages map[protopath]map[string]b
 	traverseAndAddDependencies(childPersistedMessages, curFieldMap, persistedMessages, importMap)
 }
 
+// Find all messages annotated with persisted and their dependencies
 // Returns map[protopath][messageName]
 func findPersistedMessages(protolock *Protolock, curFieldMap lockFieldMap, importMap importMap) map[protopath]map[string]bool {
 	// Find root-level messages that are annotated with persisted
@@ -272,6 +281,7 @@ func findPersistedMessages(protolock *Protolock, curFieldMap lockFieldMap, impor
 	}
 
 	persistedMessages := make(map[protopath]map[string]bool)
+	// Find their dependencies and include them as persisted messages
 	traverseAndAddDependencies(rootPersistedMessages, curFieldMap, persistedMessages, importMap)
 
 	return persistedMessages
